@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+.env
+data/chroma/
+*.db
+
+.claude/settings.local.json
+
+Orbit-docs/
+Learning/
