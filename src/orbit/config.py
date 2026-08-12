@@ -12,5 +12,7 @@ class Settings(BaseSettings):
     chroma_persist_dir: Path = Path("./data/chroma")
     chroma_collection_name: str = "orbit_documents"
 
+    checkpoint_db_path: Path = Path("./data/checkpoints.db")
+
 
 settings = Settings()
