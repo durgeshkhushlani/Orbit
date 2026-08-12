@@ -31,8 +31,18 @@ def main() -> None:
         return
 
     for i, (doc, meta, dist) in enumerate(zip(documents, metadatas, distances), 1):
-        print(f"\n[{i}] distance={dist:.4f} source={meta.get('source')}")
-        print(doc[:300].replace("\n", " ") + ("..." if len(doc) > 300 else ""))
+        snippet = doc[:300].replace("\n", " ") + ("..." if len(doc) > 300 else "")
+        _print_safe(f"\n[{i}] distance={dist:.4f} source={meta.get('source')}")
+        _print_safe(snippet)
+
+
+def _print_safe(text: str) -> None:
+    """Print text even if it contains characters the console encoding can't render."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        print(text.encode(encoding, errors="replace").decode(encoding))
 
 
 if __name__ == "__main__":
