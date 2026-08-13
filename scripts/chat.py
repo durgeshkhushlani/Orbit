@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from langchain_core.messages import HumanMessage  # noqa: E402
+from langgraph.types import Command  # noqa: E402
 
 from orbit.graph.build import build_graph  # noqa: E402
 from orbit.graph.checkpointer import get_checkpointer  # noqa: E402
@@ -33,6 +34,12 @@ def main() -> None:
                 break
 
             result = graph.invoke({"messages": [HumanMessage(user_input)]}, config=config)
+
+            while "__interrupt__" in result:
+                question = result["__interrupt__"][0].value["question"]
+                clarification = input(f"\nOrbit (clarify): {question}\nYou: ").strip()
+                result = graph.invoke(Command(resume=clarification), config=config)
+
             print(f"\nOrbit: {result['messages'][-1].content}\n")
 
 

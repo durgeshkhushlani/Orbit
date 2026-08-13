@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     chroma_collection_name: str = "orbit_documents"
 
     checkpoint_db_path: Path = Path("./data/checkpoints.db")
+    retrieval_confidence_threshold: float = 1.0
 
 
 settings = Settings()
