@@ -48,13 +48,14 @@ src/orbit/
 ├── config.py         Settings loaded from .env (pydantic-settings)
 ├── db/                ChromaDB collection access
 ├── generation/        Prompt construction for grounded generation
+├── graph/              LangGraph state, checkpointer, nodes, compiled graph
 ├── ingestion/          Document loaders, chunking, indexing
 ├── llm/                Ollama client (health check + generation)
-├── rag/                Retrieval + generation orchestration
+├── rag/                Retrieval + generation orchestration (standalone, pre-graph)
 ├── retrieval/          Top-k retrieval over the vector store
 └── main.py            FastAPI app entrypoint
 
-scripts/                Standalone CLI entrypoints (index, query, ask)
+scripts/                Standalone CLI entrypoints (index, query, ask, chat)
 tests/                  pytest test suite
 ```
 
@@ -109,6 +110,17 @@ python scripts/ask.py "your question"
 Returns an LLM-generated answer grounded in your indexed documents, along with the source
 filenames it drew from.
 
+### Multi-turn chat (LangGraph, with Clarify gate)
+
+```bash
+python scripts/chat.py
+```
+
+Runs the compiled Supervisor → Retrieval Agent graph in a REPL loop, with conversation state
+persisted per-session via a SQLite checkpointer. If the best retrieval match is too weak to
+trust, the graph pauses via `interrupt()` and asks a clarifying question instead of guessing —
+your next input resumes the same graph run (not a restart) via `Command(resume=...)`.
+
 ### Run tests
 
 ```bash
@@ -121,7 +133,7 @@ pytest
 |---|---|---|
 | 1 | FastAPI skeleton + Ollama health check. Ingestion pipeline: load → chunk → embed → index into ChromaDB. | ✅ Done |
 | 2 | Standalone retrieve → prompt → generate loop (`scripts/ask.py`). | ✅ Done |
-| 3 | LangGraph Supervisor + Retrieval Agent, SQLite checkpointer, interrupt-based Clarify? gate. | ⏳ Planned |
+| 3 | LangGraph Supervisor + Retrieval Agent, SQLite checkpointer, interrupt-based Clarify? gate. | ✅ Done |
 | 4 | File Agent with scope guardrail + Confirm? gate. | ⏳ Planned |
 | 5 | Document Agent (generate `.docx`/`.pdf`/`.md`). | ⏳ Planned |
 | 6 | Email Agent + Web Agent, both gated on side-effecting actions. | ⏳ Planned |
@@ -134,7 +146,7 @@ pytest
 - **Vector store:** ChromaDB (bundled ONNX MiniLM embeddings)
 - **Document processing:** LangChain community loaders, LangChain text splitters
 - **Config:** pydantic-settings
-- **Orchestration (planned):** LangGraph
+- **Orchestration:** LangGraph (Supervisor + specialist agents, SQLite checkpointer)
 - **Testing:** pytest
 
 ## License
