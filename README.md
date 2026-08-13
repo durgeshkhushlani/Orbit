@@ -40,6 +40,15 @@ Future layers (LangGraph Supervisor + specialist agents + interrupt-based
 clarify/confirm gates) are documented in the project's internal implementation plan and will
 land incrementally — see [Progress](#progress) below.
 
+### Multi-agent flow
+
+![Orbit multi-agent LangGraph flow](docs/orbit-agent-flow.png)
+
+Supervisor routes to specialist agents (Retrieval, File, Document, Email, Web), each behind its
+own gate where relevant — Clarify? for low-confidence retrieval, Confirm? before any
+side-effecting action, and a hard scope guardrail on the File Agent. A SQLite checkpointer
+persists state per conversation thread so a paused gate resumes without restarting the graph.
+
 ## Project layout
 
 ```
