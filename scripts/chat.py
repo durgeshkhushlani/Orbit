@@ -36,9 +36,10 @@ def main() -> None:
             result = graph.invoke({"messages": [HumanMessage(user_input)]}, config=config)
 
             while "__interrupt__" in result:
-                question = result["__interrupt__"][0].value["question"]
-                clarification = input(f"\nOrbit (clarify): {question}\nYou: ").strip()
-                result = graph.invoke(Command(resume=clarification), config=config)
+                payload = result["__interrupt__"][0].value
+                label = payload.get("type", "clarify")
+                answer = input(f"\nOrbit ({label}): {payload['question']}\nYou: ").strip()
+                result = graph.invoke(Command(resume=answer), config=config)
 
             print(f"\nOrbit: {result['messages'][-1].content}\n")
 

@@ -56,6 +56,7 @@ src/orbit/
 ├── api/routes/       FastAPI route handlers
 ├── config.py         Settings loaded from .env (pydantic-settings)
 ├── db/                ChromaDB collection access
+├── file_agent/         Scope guardrail (allowlist) + move/rename actions
 ├── generation/        Prompt construction for grounded generation
 ├── graph/              LangGraph state, checkpointer, nodes, compiled graph
 ├── ingestion/          Document loaders, chunking, indexing
@@ -119,16 +120,25 @@ python scripts/ask.py "your question"
 Returns an LLM-generated answer grounded in your indexed documents, along with the source
 filenames it drew from.
 
-### Multi-turn chat (LangGraph, with Clarify gate)
+### Multi-turn chat (LangGraph, with Clarify/Confirm gates)
 
 ```bash
 python scripts/chat.py
 ```
 
-Runs the compiled Supervisor → Retrieval Agent graph in a REPL loop, with conversation state
-persisted per-session via a SQLite checkpointer. If the best retrieval match is too weak to
-trust, the graph pauses via `interrupt()` and asks a clarifying question instead of guessing —
-your next input resumes the same graph run (not a restart) via `Command(resume=...)`.
+Runs the compiled Supervisor graph in a REPL loop, with conversation state persisted
+per-session via a SQLite checkpointer. Supervisor routes each message to either the Retrieval
+Agent or the File Agent:
+
+- **Retrieval Agent** — if the best match is too weak to trust, pauses via `interrupt()` with a
+  Clarify? question instead of guessing.
+- **File Agent** — extracts a move/rename plan from your request, refuses outright if the path
+  is outside `ORBIT_ALLOWED_DIRS` (a hard guardrail, checked before anything else), otherwise
+  pauses via `interrupt()` with a Confirm? prompt describing the exact action before touching
+  disk.
+
+Either pause resumes the same graph run (not a restart) via `Command(resume=...)` on your next
+input.
 
 ### Run tests
 
@@ -143,7 +153,7 @@ pytest
 | 1 | FastAPI skeleton + Ollama health check. Ingestion pipeline: load → chunk → embed → index into ChromaDB. | ✅ Done |
 | 2 | Standalone retrieve → prompt → generate loop (`scripts/ask.py`). | ✅ Done |
 | 3 | LangGraph Supervisor + Retrieval Agent, SQLite checkpointer, interrupt-based Clarify? gate. | ✅ Done |
-| 4 | File Agent with scope guardrail + Confirm? gate. | ⏳ Planned |
+| 4 | File Agent (move/rename) with scope guardrail + Confirm? gate. | ✅ Done |
 | 5 | Document Agent (generate `.docx`/`.pdf`/`.md`). | ⏳ Planned |
 | 6 | Email Agent + Web Agent, both gated on side-effecting actions. | ⏳ Planned |
 | 7 | End-to-end testing, demo prep. | ⏳ Planned |
