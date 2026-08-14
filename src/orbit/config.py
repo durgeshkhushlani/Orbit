@@ -15,5 +15,13 @@ class Settings(BaseSettings):
     checkpoint_db_path: Path = Path("./data/checkpoints.db")
     retrieval_confidence_threshold: float = 1.0
 
+    orbit_allowed_dirs: str = ""
+
+    @property
+    def allowed_dirs(self) -> list[Path]:
+        """Root directories the File Agent may touch, resolved to absolute paths.
+        Configured as a comma-separated list in ORBIT_ALLOWED_DIRS."""
+        return [Path(raw.strip()).resolve() for raw in self.orbit_allowed_dirs.split(",") if raw.strip()]
+
 
 settings = Settings()
