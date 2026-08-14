@@ -2,23 +2,27 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from orbit.graph.nodes import retrieval_node, supervisor_node
+from orbit.graph.nodes import file_agent_node, retrieval_node, route_after_supervisor, supervisor_node
 from orbit.graph.state import OrbitState
 
 
 def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
-    """Wire Supervisor -> Retrieval Agent and compile with the given checkpointer.
-
-    Only one specialist exists so far, so Supervisor routes to it
-    unconditionally; this is the seam where more agents (File, Document,
-    Email, Web) get added in later days.
+    """Wire Supervisor -> {Retrieval Agent, File Agent} and compile with the
+    given checkpointer. Supervisor routes conditionally between specialists;
+    Document/Email/Web agents get added to the same routing table in later days.
     """
     graph = StateGraph(OrbitState)
     graph.add_node("supervisor", supervisor_node)
     graph.add_node("retrieval_agent", retrieval_node)
+    graph.add_node("file_agent", file_agent_node)
 
     graph.add_edge(START, "supervisor")
-    graph.add_edge("supervisor", "retrieval_agent")
+    graph.add_conditional_edges(
+        "supervisor",
+        route_after_supervisor,
+        {"retrieval_agent": "retrieval_agent", "file_agent": "file_agent"},
+    )
     graph.add_edge("retrieval_agent", END)
+    graph.add_edge("file_agent", END)
 
     return graph.compile(checkpointer=checkpointer)
