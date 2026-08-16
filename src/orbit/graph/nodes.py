@@ -6,6 +6,7 @@ from langgraph.types import interrupt
 
 from orbit.config import settings
 from orbit.document_agent.generator import write_docx, write_markdown, write_pdf
+from orbit.email_agent.mailer import send_email
 from orbit.file_agent.actions import move_file, rename_file
 from orbit.file_agent.scope_guard import ScopeViolation, check_path_allowed
 from orbit.generation.prompt import build_document_prompt, build_prompt
@@ -25,6 +26,7 @@ DOCUMENT_AGENT_KEYWORDS = (
     "create a document",
     "write a report",
 )
+EMAIL_AGENT_KEYWORDS = ("email", "e-mail", "send mail", "send an email")
 
 DOCUMENT_WRITERS = {"md": write_markdown, "docx": write_docx, "pdf": write_pdf}
 
@@ -43,6 +45,16 @@ DOCUMENT_ACTION_PROMPT = (
     "Request: {query}"
 )
 
+EMAIL_ACTION_PROMPT = (
+    "Extract an email to send from the user's request as strict JSON with keys "
+    '"to" (recipient address -- if the user says "myself"/"me", use {user_email}), '
+    '"subject", "body", and "attachment" (an absolute file path if the user wants '
+    "a file attached, matched against the indexed sources below, or null). "
+    "Respond with ONLY the JSON object, nothing else.\n\n"
+    "Indexed sources:\n{sources}\n\n"
+    "Request: {query}"
+)
+
 
 def _latest_query(messages: list[BaseMessage]) -> str:
     for message in reversed(messages):
@@ -57,13 +69,15 @@ def _is_low_confidence(chunks: list[RetrievedChunk]) -> bool:
 
 def route_after_supervisor(state: OrbitState) -> str:
     """Picks the specialist agent for the latest query. A keyword heuristic is
-    enough for now with three specialists; this is the seam to swap in an
+    enough for now with four specialists; this is the seam to swap in an
     LLM-based classifier once more agents make keyword matching ambiguous."""
     query = _latest_query(state["messages"]).lower()
     if any(keyword in query for keyword in FILE_AGENT_KEYWORDS):
         return "file_agent"
     if any(keyword in query for keyword in DOCUMENT_AGENT_KEYWORDS):
         return "document_agent"
+    if any(keyword in query for keyword in EMAIL_AGENT_KEYWORDS):
+        return "email_agent"
     return "retrieval_agent"
 
 
@@ -186,4 +200,65 @@ def document_agent_node(state: OrbitState) -> dict:
     return {
         "messages": [AIMessage(content=f"Generated {plan['format']} document at {result_path}")],
         "sources": sources,
+    }
+
+
+def email_agent_node(state: OrbitState) -> dict:
+    """Extract a send-email action from the latest query -- retrieving indexed
+    sources first so the LLM can resolve a referenced document (e.g. "email me
+    my resume") to an actual file path -- refuse outright if any attachment
+    falls outside ORBIT_ALLOWED_DIRS, then pause for human confirmation before
+    sending anything."""
+    query = _latest_query(state["messages"])
+    chunks = retrieve(query)
+    sources = list(dict.fromkeys(chunk.source for chunk in chunks))
+
+    try:
+        prompt = EMAIL_ACTION_PROMPT.format(
+            user_email=settings.orbit_user_email or "(no default address configured)",
+            sources="\n".join(sources) or "(nothing indexed)",
+            query=query,
+        )
+        plan = json.loads(generate(prompt))
+        to = plan["to"]
+        subject = plan["subject"]
+        body = plan["body"]
+        attachment = plan.get("attachment") or None
+    except (json.JSONDecodeError, KeyError):
+        return {
+            "messages": [
+                AIMessage(
+                    content="I couldn't tell exactly what email you want sent -- "
+                    "could you specify the recipient, subject, and body?"
+                )
+            ],
+            "sources": [],
+        }
+
+    attachment_path = None
+    if attachment:
+        try:
+            attachment_path = check_path_allowed(Path(attachment))
+        except ScopeViolation as exc:
+            return {"messages": [AIMessage(content=str(exc))], "sources": []}
+
+    approved = interrupt(
+        {
+            "type": "confirm",
+            "question": (
+                f"About to email '{subject}' to {to}"
+                f"{f' with attachment {attachment_path.name}' if attachment_path else ''}. "
+                "Proceed? (yes/no)"
+            ),
+        }
+    )
+
+    if str(approved).strip().lower() not in ("y", "yes"):
+        return {"messages": [AIMessage(content="Okay, I won't send that.")], "sources": []}
+
+    send_email(to, subject, body, attachment_path)
+
+    return {
+        "messages": [AIMessage(content=f"Sent -- emailed '{subject}' to {to}")],
+        "sources": [str(attachment_path)] if attachment_path else [],
     }
