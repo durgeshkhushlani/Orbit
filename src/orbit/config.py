@@ -17,6 +17,13 @@ class Settings(BaseSettings):
 
     orbit_allowed_dirs: str = ""
 
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    orbit_user_email: str = ""
+
     @property
     def allowed_dirs(self) -> list[Path]:
         """Root directories the File Agent may touch, resolved to absolute paths.
