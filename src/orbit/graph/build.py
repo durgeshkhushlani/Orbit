@@ -9,14 +9,15 @@ from orbit.graph.nodes import (
     retrieval_node,
     route_after_supervisor,
     supervisor_node,
+    web_agent_node,
 )
 from orbit.graph.state import OrbitState
 
 
 def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
-    """Wire Supervisor -> {Retrieval, File, Document, Email Agent} and compile
-    with the given checkpointer. Supervisor routes conditionally between
-    specialists; the Web Agent gets added to the same routing table next.
+    """Wire Supervisor -> {Retrieval, File, Document, Email, Web Agent} and
+    compile with the given checkpointer. Supervisor routes conditionally
+    between the five specialists.
     """
     graph = StateGraph(OrbitState)
     graph.add_node("supervisor", supervisor_node)
@@ -24,6 +25,7 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
     graph.add_node("file_agent", file_agent_node)
     graph.add_node("document_agent", document_agent_node)
     graph.add_node("email_agent", email_agent_node)
+    graph.add_node("web_agent", web_agent_node)
 
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(
@@ -34,11 +36,13 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
             "file_agent": "file_agent",
             "document_agent": "document_agent",
             "email_agent": "email_agent",
+            "web_agent": "web_agent",
         },
     )
     graph.add_edge("retrieval_agent", END)
     graph.add_edge("file_agent", END)
     graph.add_edge("document_agent", END)
     graph.add_edge("email_agent", END)
+    graph.add_edge("web_agent", END)
 
     return graph.compile(checkpointer=checkpointer)

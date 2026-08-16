@@ -1,9 +1,11 @@
 import hashlib
 from pathlib import Path
 
+from langchain_core.documents import Document
+
 from orbit.db.vectorstore import get_collection
 from orbit.ingestion.chunking import chunk_documents
-from orbit.ingestion.loaders import load_folder
+from orbit.ingestion.loaders import load_document, load_folder
 
 
 def _chunk_id(source: str, chunk_index: int) -> str:
@@ -17,7 +19,17 @@ def index_folder(folder: Path) -> dict:
     Upsert (not add) so re-running against the same folder updates existing
     chunks instead of erroring on duplicate IDs.
     """
-    documents = load_folder(folder)
+    return _index_documents(load_folder(folder))
+
+
+def index_file(path: Path) -> dict:
+    """Load, chunk, and upsert a single file into Chroma -- used by the Web
+    Agent to index a file it just downloaded/saved, without re-scanning the
+    whole allowed-dirs tree via index_folder."""
+    return _index_documents(load_document(path))
+
+
+def _index_documents(documents: list[Document]) -> dict:
     chunks = chunk_documents(documents)
 
     if not chunks:
