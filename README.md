@@ -56,6 +56,7 @@ src/orbit/
 ├── api/routes/       FastAPI route handlers
 ├── config.py         Settings loaded from .env (pydantic-settings)
 ├── db/                ChromaDB collection access
+├── document_agent/     Document generators (write_markdown/write_docx/write_pdf)
 ├── file_agent/         Scope guardrail (allowlist) + move/rename actions
 ├── generation/        Prompt construction for grounded generation
 ├── graph/              LangGraph state, checkpointer, nodes, compiled graph
@@ -127,8 +128,8 @@ python scripts/chat.py
 ```
 
 Runs the compiled Supervisor graph in a REPL loop, with conversation state persisted
-per-session via a SQLite checkpointer. Supervisor routes each message to either the Retrieval
-Agent or the File Agent:
+per-session via a SQLite checkpointer. Supervisor routes each message to the Retrieval, File, or
+Document agent:
 
 - **Retrieval Agent** — if the best match is too weak to trust, pauses via `interrupt()` with a
   Clarify? question instead of guessing.
@@ -136,9 +137,13 @@ Agent or the File Agent:
   is outside `ORBIT_ALLOWED_DIRS` (a hard guardrail, checked before anything else), otherwise
   pauses via `interrupt()` with a Confirm? prompt describing the exact action before touching
   disk.
+- **Document Agent** — generates a `.md`/`.docx`/`.pdf` grounded in retrieved context at a path
+  you specify (e.g. "generate a report summarizing X, save as markdown at ..."). The destination
+  is scope-checked like the File Agent, but ungated — no Confirm? step, since creating a new file
+  is lower-risk than moving or renaming an existing one.
 
-Either pause resumes the same graph run (not a restart) via `Command(resume=...)` on your next
-input.
+A Clarify?/Confirm? pause resumes the same graph run (not a restart) via `Command(resume=...)`
+on your next input.
 
 ### Run tests
 
@@ -154,7 +159,7 @@ pytest
 | 2 | Standalone retrieve → prompt → generate loop (`scripts/ask.py`). | ✅ Done |
 | 3 | LangGraph Supervisor + Retrieval Agent, SQLite checkpointer, interrupt-based Clarify? gate. | ✅ Done |
 | 4 | File Agent (move/rename) with scope guardrail + Confirm? gate. | ✅ Done |
-| 5 | Document Agent (generate `.docx`/`.pdf`/`.md`). | ⏳ Planned |
+| 5 | Document Agent (generate `.docx`/`.pdf`/`.md`), grounded in retrieval, ungated. | ✅ Done |
 | 6 | Email Agent + Web Agent, both gated on side-effecting actions. | ⏳ Planned |
 | 7 | End-to-end testing, demo prep. | ⏳ Planned |
 
@@ -164,6 +169,7 @@ pytest
 - **LLM inference:** Ollama (qwen2.5:7b)
 - **Vector store:** ChromaDB (bundled ONNX MiniLM embeddings)
 - **Document processing:** LangChain community loaders, LangChain text splitters
+- **Document generation:** python-docx, fpdf2
 - **Config:** pydantic-settings
 - **Orchestration:** LangGraph (Supervisor + specialist agents, SQLite checkpointer)
 - **Testing:** pytest
