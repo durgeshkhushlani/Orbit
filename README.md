@@ -171,7 +171,7 @@ pytest
 | 4 | File Agent (move/rename) with scope guardrail + Confirm? gate. | ✅ Done |
 | 5 | Document Agent (generate `.docx`/`.pdf`/`.md`), grounded in retrieval, ungated. | ✅ Done |
 | 6 | Email Agent (SMTP, Confirm?-gated) + Web Agent (search/extract ungated, save-and-index Confirm?-gated). | ✅ Done |
-| 7 | Multi-turn, multi-agent end-to-end tests; README + architecture diagram refresh; demo prep. | 🚧 In progress |
+| 7 | Multi-turn, multi-agent end-to-end tests; README + architecture diagram refresh; demo prep. | ✅ Done |
 
 ## Tech stack
 
