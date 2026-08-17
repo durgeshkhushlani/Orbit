@@ -57,6 +57,7 @@ src/orbit/
 ├── config.py         Settings loaded from .env (pydantic-settings)
 ├── db/                ChromaDB collection access
 ├── document_agent/     Document generators (write_markdown/write_docx/write_pdf)
+├── email_agent/         SMTP mailer (build_message/send_email)
 ├── file_agent/         Scope guardrail (allowlist) + move/rename actions
 ├── generation/        Prompt construction for grounded generation
 ├── graph/              LangGraph state, checkpointer, nodes, compiled graph
@@ -64,6 +65,7 @@ src/orbit/
 ├── llm/                Ollama client (health check + generation)
 ├── rag/                Retrieval + generation orchestration (standalone, pre-graph)
 ├── retrieval/          Top-k retrieval over the vector store
+├── web_agent/           DDGS search + trafilatura content extraction
 └── main.py            FastAPI app entrypoint
 
 scripts/                Standalone CLI entrypoints (index, query, ask, chat)
@@ -128,8 +130,7 @@ python scripts/chat.py
 ```
 
 Runs the compiled Supervisor graph in a REPL loop, with conversation state persisted
-per-session via a SQLite checkpointer. Supervisor routes each message to the Retrieval, File, or
-Document agent:
+per-session via a SQLite checkpointer. Supervisor routes each message to one of five specialists:
 
 - **Retrieval Agent** — if the best match is too weak to trust, pauses via `interrupt()` with a
   Clarify? question instead of guessing.
@@ -138,9 +139,18 @@ Document agent:
   pauses via `interrupt()` with a Confirm? prompt describing the exact action before touching
   disk.
 - **Document Agent** — generates a `.md`/`.docx`/`.pdf` grounded in retrieved context at a path
-  you specify (e.g. "generate a report summarizing X, save as markdown at ..."). The destination
-  is scope-checked like the File Agent, but ungated — no Confirm? step, since creating a new file
-  is lower-risk than moving or renaming an existing one.
+  you specify (e.g. "generate a report summarizing X, save as markdown at ..."). Resolves
+  follow-up references ("summarize *that*") against the conversation so far before retrieving.
+  The destination is scope-checked like the File Agent, but ungated — no Confirm? step, since
+  creating a new file is lower-risk than moving or renaming an existing one.
+- **Email Agent** — extracts a recipient/subject/body (and optional attachment) from your
+  request, resolving "myself"/"me" against `ORBIT_USER_EMAIL` and matching a referenced document
+  against what's indexed (e.g. "email me my resume"). Any attachment is scope-checked, then a
+  Confirm? prompt shows the exact recipient/subject/attachment before anything is sent via SMTP.
+- **Web Agent** — searches the web (DDGS) and extracts page content (`trafilatura`) to ground its
+  answer — read-only, no gate. If you also ask it to save the results (e.g. "...and save as
+  pdf"), that destination is scope-checked and Confirm?-gated like the other side-effecting
+  actions, and the saved file is auto-indexed into Chroma so it's immediately retrievable.
 
 A Clarify?/Confirm? pause resumes the same graph run (not a restart) via `Command(resume=...)`
 on your next input.
@@ -160,8 +170,8 @@ pytest
 | 3 | LangGraph Supervisor + Retrieval Agent, SQLite checkpointer, interrupt-based Clarify? gate. | ✅ Done |
 | 4 | File Agent (move/rename) with scope guardrail + Confirm? gate. | ✅ Done |
 | 5 | Document Agent (generate `.docx`/`.pdf`/`.md`), grounded in retrieval, ungated. | ✅ Done |
-| 6 | Email Agent + Web Agent, both gated on side-effecting actions. | ⏳ Planned |
-| 7 | End-to-end testing, demo prep. | ⏳ Planned |
+| 6 | Email Agent (SMTP, Confirm?-gated) + Web Agent (search/extract ungated, save-and-index Confirm?-gated). | ✅ Done |
+| 7 | Multi-turn, multi-agent end-to-end tests; README + architecture diagram refresh; demo prep. | ✅ Done |
 
 ## Tech stack
 
@@ -170,8 +180,10 @@ pytest
 - **Vector store:** ChromaDB (bundled ONNX MiniLM embeddings)
 - **Document processing:** LangChain community loaders, LangChain text splitters
 - **Document generation:** python-docx, fpdf2
+- **Web search & extraction:** ddgs, trafilatura
+- **Email:** smtplib (stdlib)
 - **Config:** pydantic-settings
-- **Orchestration:** LangGraph (Supervisor + specialist agents, SQLite checkpointer)
+- **Orchestration:** LangGraph (Supervisor + 5 specialist agents, SQLite checkpointer)
 - **Testing:** pytest
 
 ## License

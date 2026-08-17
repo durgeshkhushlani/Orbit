@@ -50,9 +50,14 @@ FILE_ACTION_PROMPT = (
 )
 
 DOCUMENT_ACTION_PROMPT = (
-    "Extract a document generation request from the user's message as strict "
-    'JSON with keys "format" ("md", "docx", or "pdf") and "destination" (the '
-    "full output file path). Respond with ONLY the JSON object, nothing else.\n\n"
+    "Extract a document generation request from the user's message as strict JSON "
+    'with keys "format" ("md", "docx", or "pdf"), "destination" (the full output '
+    'file path), and "topic" (the actual subject to retrieve and write about -- '
+    'resolve any pronoun like "that"/"it" against the conversation so far, e.g. if '
+    'the user says "summarize that" after discussing X, topic should be X itself, '
+    "not the literal word \"that\"). Respond with ONLY the JSON object, nothing "
+    "else.\n\n"
+    "Conversation so far:\n{context}\n\n"
     "Request: {query}"
 )
 
@@ -86,6 +91,29 @@ def _latest_query(messages: list[BaseMessage]) -> str:
 
 def _is_low_confidence(chunks: list[RetrievedChunk]) -> bool:
     return not chunks or chunks[0].distance > settings.retrieval_confidence_threshold
+
+
+def _conversation_context(messages: list[BaseMessage], limit: int = 6) -> str:
+    """Render the last few turns as plain text for prompts that need to
+    resolve anaphora ("summarize that") against what was already discussed,
+    not just the literal wording of the latest message."""
+    lines = [
+        f"User: {m.content}" if isinstance(m, HumanMessage) else f"Assistant: {m.content}"
+        for m in messages[-limit:]
+        if isinstance(m, (HumanMessage, AIMessage))
+    ]
+    return "\n".join(lines) if lines else "(no prior context)"
+
+
+def _parse_json_plan(response: str) -> dict:
+    """Parse a JSON object out of an LLM response, tolerating a markdown code
+    fence (```json ... ```) around it -- despite every ACTION_PROMPT saying
+    "ONLY the JSON object", the model sometimes wraps it in one anyway."""
+    start = response.find("{")
+    end = response.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise json.JSONDecodeError("no JSON object found in response", response, 0)
+    return json.loads(response[start : end + 1])
 
 
 def route_after_supervisor(state: OrbitState) -> str:
@@ -152,7 +180,7 @@ def file_agent_node(state: OrbitState) -> dict:
     query = _latest_query(state["messages"])
 
     try:
-        plan = json.loads(generate(FILE_ACTION_PROMPT.format(query=query)))
+        plan = _parse_json_plan(generate(FILE_ACTION_PROMPT.format(query=query)))
         action = plan["action"]
         source = Path(plan["source"])
         destination = (
@@ -199,11 +227,15 @@ def document_agent_node(state: OrbitState) -> dict:
     plan this action is ungated -- no Confirm? step, since generating a new
     file is lower-risk than moving/deleting an existing one."""
     query = _latest_query(state["messages"])
+    context = _conversation_context(state["messages"])
 
     try:
-        plan = json.loads(generate(DOCUMENT_ACTION_PROMPT.format(query=query)))
+        plan = _parse_json_plan(
+            generate(DOCUMENT_ACTION_PROMPT.format(context=context, query=query))
+        )
         writer = DOCUMENT_WRITERS[plan["format"]]
         destination = Path(plan["destination"])
+        topic = plan.get("topic") or query
     except (json.JSONDecodeError, KeyError):
         return {
             "messages": [
@@ -220,8 +252,8 @@ def document_agent_node(state: OrbitState) -> dict:
     except ScopeViolation as exc:
         return {"messages": [AIMessage(content=str(exc))], "sources": []}
 
-    chunks = retrieve(query)
-    content = generate(build_document_prompt(query, chunks))
+    chunks = retrieve(topic)
+    content = generate(build_document_prompt(topic, chunks))
     result_path = writer(content, destination)
     sources = list(dict.fromkeys(chunk.source for chunk in chunks))
 
@@ -247,7 +279,7 @@ def email_agent_node(state: OrbitState) -> dict:
             sources="\n".join(sources) or "(nothing indexed)",
             query=query,
         )
-        plan = json.loads(generate(prompt))
+        plan = _parse_json_plan(generate(prompt))
         to = plan["to"]
         subject = plan["subject"]
         body = plan["body"]
@@ -301,7 +333,7 @@ def web_agent_node(state: OrbitState) -> dict:
     query = _latest_query(state["messages"])
 
     try:
-        plan = json.loads(generate(WEB_ACTION_PROMPT.format(query=query)))
+        plan = _parse_json_plan(generate(WEB_ACTION_PROMPT.format(query=query)))
         search_query = plan["query"]
         save_as = plan.get("save_as") or None
         destination = plan.get("destination") or None
