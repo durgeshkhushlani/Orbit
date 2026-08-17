@@ -81,6 +81,41 @@ def test_unparseable_plan_asks_for_format_and_destination(monkeypatch, allowed_r
     assert "format" in result["messages"][-1].content.lower()
 
 
+def test_topic_resolves_pronoun_reference_against_prior_turn(monkeypatch, allowed_root):
+    """Caught via a live multi-turn test: a follow-up like "summarize that"
+    has no topic words of its own, so retrieving with the raw latest message
+    pulled unrelated chunks. The plan's "topic" field should resolve the
+    pronoun against the conversation instead."""
+    destination = allowed_root / "summary.md"
+    retrieved_with = {}
+
+    def fake_retrieve(query, n_results=5):
+        retrieved_with["query"] = query
+        return [RetrievedChunk(text="cohesion info", source="doc.pdf", distance=0.5)]
+
+    monkeypatch.setattr("orbit.graph.nodes.retrieve", fake_retrieve)
+    _stub_generate_sequence(
+        monkeypatch,
+        [
+            "Cohesion is how focused a module's responsibilities are.",
+            json.dumps(
+                {"format": "md", "destination": str(destination), "topic": "cohesion in software design"}
+            ),
+            "Generated summary content.",
+        ],
+    )
+
+    graph = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "doc-topic-resolution"}}
+
+    graph.invoke({"messages": [HumanMessage("what is cohesion")], "sources": []}, config=config)
+    graph.invoke(
+        {"messages": [HumanMessage("summarize that and save as markdown")], "sources": []}, config=config
+    )
+
+    assert retrieved_with["query"] == "cohesion in software design"
+
+
 def test_document_request_has_no_confirm_gate(monkeypatch, allowed_root):
     """Document generation is ungated per the plan -- it should never pause,
     unlike File Agent's Confirm? gate."""
